@@ -135,6 +135,50 @@ If both machines changed Beads concurrently, let Dolt report the conflict and re
 
 If offline, continue working locally. A failed hook pull/push should not block Git operations; synchronize with `bd dolt pull` and `bd dolt push` when connectivity returns.
 
+## `.beads/` already exists in this clone but was never linked to the Dolt remote
+
+This happens when the repo's `.beads/` was committed from a different machine/clone that ran `bd init` independently, and this clone got a working `.beads/embeddeddolt/` some other way (fresh `bd init` here, or an old backup) rather than via `bd bootstrap`. Symptoms:
+
+```bash
+bd dolt remote list   # "No remotes configured." even though .beads/config.yaml has sync.remote set
+```
+
+or, after adding the remote and pulling/pushing:
+
+```text
+Error: merge origin/main: Error 1105: no common ancestor
+```
+
+This means the local Dolt commit graph and the remote's were built from two separate `bd init`s — like two unrelated git repos, not two branches of one history. Dolt's merge needs a shared ancestor commit to diff against; with none, it refuses rather than guess.
+
+**Before choosing a recovery path, check whether it actually matters:**
+
+```bash
+git fetch origin main -q
+git diff origin/main -- .beads/issues.jsonl
+```
+
+If this is empty, the git-tracked issue content already matches the remote exactly — only the Dolt binary history diverged, not the data. In that case it's safe to discard the local Dolt db and re-clone:
+
+```bash
+bd dolt remote add origin git+ssh://git@github.com/OWNER/REPOSITORY.git   # if not already added
+rm -rf .beads/embeddeddolt      # or .beads/dolt/, depending on bd version's embedded-mode layout
+bd bootstrap
+bd status                       # confirm issue count matches expectations
+bd dolt push && bd dolt pull    # confirm sync round-trips cleanly
+```
+
+If `git diff` shows real differences, do not discard either side blindly — export both (`bd export`) and reconcile the issues by hand, or treat whichever side has the newer/more-trusted work as authoritative and use `bd dolt push --force` from that side instead.
+
+While setting this up, also check for two easy-to-miss gaps that don't error loudly:
+
+```bash
+git config core.hooksPath        # should print .beads/hooks — set it if empty
+ls -ld .beads                    # should be 0700; chmod 700 .beads if not
+```
+
+Also add `.beads/.auto-import-issues.jsonl` to `.beads/.gitignore` if not already present — it's bd's runtime staging file for auto-import, not the tracked export (`.beads/issues.jsonl`, no leading dot), and differs per machine.
+
 ## Copy/paste setup prompt for another repository
 
 ```text
