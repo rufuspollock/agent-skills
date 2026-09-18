@@ -46,7 +46,7 @@ The Beads-managed hooks are installed in `.beads/hooks` and Git is configured wi
 git config core.hooksPath .beads/hooks
 ```
 
-For convenient personal sync, add these small wrappers after the Beads-managed sections:
+**Check the bd version before adding anything.** As of bd 1.1.2, the installed hooks already call `bd hooks run <hook-name>` internally, which handles Dolt sync (pull on merge/checkout, push on pre-push) natively — read the hook files (e.g. `.beads/hooks/pre-push`) to confirm before assuming manual wrappers are needed. Only add the wrappers below if inspection shows the installed hooks do NOT already sync:
 
 - `post-merge`: run `bd dolt pull`, but do not fail `git pull` if the network is unavailable.
 - `post-checkout`: run `bd dolt pull` only when the checkout was a branch switch or clone update (`$3 = 1`), and do not fail checkout if it cannot reach the remote.
