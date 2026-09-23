@@ -46,17 +46,30 @@ The Beads-managed hooks are installed in `.beads/hooks` and Git is configured wi
 git config core.hooksPath .beads/hooks
 ```
 
-**Check the bd version before adding anything.** As of bd 1.1.2, the installed hooks already call `bd hooks run <hook-name>` internally, which handles Dolt sync (pull on merge/checkout, push on pre-push) natively — read the hook files (e.g. `.beads/hooks/pre-push`) to confirm before assuming manual wrappers are needed. Only add the wrappers below if inspection shows the installed hooks do NOT already sync:
+**Rule: `git push` must also push Beads.** In any repo with Beads installed, a `git push` should push the Beads Dolt data (`refs/dolt/data`) too. Agents asked to "push" or "publish" do both.
 
-- `post-merge`: run `bd dolt pull`, but do not fail `git pull` if the network is unavailable.
-- `post-checkout`: run `bd dolt pull` only when the checkout was a branch switch or clone update (`$3 = 1`), and do not fail checkout if it cannot reach the remote.
-- `pre-push`: start `bd dolt push` in the background and write output to an ignored `.beads/dolt-push.log`.
+**The managed hooks do not do this.** Verified with bd 1.3.0 (hook shim v1.1.2), 2026-09-23: `bd hooks run pre-push` only handles backup/export (and skips those as a git hook); `refs/dolt/data` on the remote stays unchanged after `git push`. An earlier note here said bd 1.1.2 synced natively; that was wrong, or it no longer holds. Check it in a new repo by comparing `git ls-remote origin refs/dolt/data` before and after a `git push` that has a pending bead change.
 
-Because the pre-push sync is backgrounded, run this when you need confirmation that the Beads push completed:
+So append this to `.beads/hooks/pre-push`, **after** the `# --- END BEADS INTEGRATION ---` marker so that `bd hooks install` leaves it alone. The hooks directory is tracked, so commit it and every clone gets it:
 
-```bash
-bd dolt push
+```sh
+# --- Dolt sync on git push (local addition, outside the managed block) ---
+# bd's managed pre-push hook does not push the Beads Dolt data (verified with
+# bd 1.3.0), so push it here. Never blocks git push; the env guard prevents
+# recursion if bd's git-backed remote triggers this hook itself.
+if command -v bd >/dev/null 2>&1 && [ -z "$BD_DOLT_PUSH_IN_HOOK" ]; then
+  export BD_DOLT_PUSH_IN_HOOK=1
+  if ! bd dolt push >&2; then
+    echo >&2 "beads: 'bd dolt push' failed; git push continues. Run 'bd dolt push' by hand."
+  fi
+fi
 ```
+
+The push runs in the foreground (a few seconds), so its result shows up in the `git push` output. It never fails the git push. Reference implementation: `datopian/wayintoai` commit `ea06ab1`.
+
+Pulls are not automated yet. Also verify whether `post-merge` / `post-checkout` actually run `bd dolt pull`; if not, add the same kind of guarded wrapper (`bd dolt pull` that never fails the git operation; for `post-checkout`, only when `$3 = 1`). Until then, run `bd dolt pull` after `git pull`.
+
+Also add a line to the repo's `AGENTS.md`/`CLAUDE.md` (and the push step in any repo skill) saying that `git push` also pushes Beads through the hook, and that `bd dolt push` is the manual fallback.
 
 ## Normal workflow on either machine
 
@@ -86,7 +99,7 @@ git commit -m "Describe the work"
 git push
 ```
 
-The explicit `bd dolt push` is recommended at session end even when the pre-push hook also starts a background push. It makes handoff and shutdown deterministic.
+With the pre-push hook above, `git push` also pushes Beads, so the explicit `bd dolt push` only confirms it (and covers Beads-only changes when there is no git commit to push).
 
 ## New machine or fresh clone
 
@@ -194,7 +207,8 @@ Requirements:
 - Enable `export.auto true`; explain that JSONL is for interchange/viewers and Dolt remotes are the actual sync mechanism.
 - Keep machine-local Dolt databases, sockets, locks, sync state, and logs ignored.
 - Ensure Git uses the repo-local `.beads/hooks` via `core.hooksPath`.
-- Add failure-tolerant hooks: pull after `git pull`/merge and branch checkout, and start a non-blocking `bd dolt push` during `git push` with an ignored log file.
+- The managed hooks do not sync Dolt. Append the guarded `bd dolt push` from "Recommended hooks" to `.beads/hooks/pre-push`, after the END marker, so `git push` also pushes Beads and never fails because of it. Verify by comparing `git ls-remote origin refs/dolt/data` before and after a push. Add failure-tolerant `bd dolt pull` wrappers for post-merge/post-checkout if those hooks don't already pull.
+- Note in `AGENTS.md`/`CLAUDE.md` that `git push` also pushes Beads.
 - Verify with `bd context`, `bd dolt status`, `bd dolt remote list`, `bd status`, and Git status. Note the embedded-mode `bd doctor` and federation-only `bd config validate` limitations described in the playbook.
 - Do not publish or deploy anything.
 - Write or update a local playbook explaining setup, normal pull/work/push, fresh-clone recovery, sync failures, and this prompt.
