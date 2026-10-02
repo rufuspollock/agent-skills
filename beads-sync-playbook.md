@@ -65,7 +65,7 @@ if command -v bd >/dev/null 2>&1 && [ -z "$BD_DOLT_PUSH_IN_HOOK" ]; then
 fi
 ```
 
-The push runs in the foreground (a few seconds), so its result shows up in the `git push` output. It never fails the git push. Reference implementation: `datopian/wayintoai` commit `ea06ab1`.
+The push runs in the foreground (a few seconds), so its result shows up in the `git push` output. It never fails the git push.
 
 Pulls are not automated yet. Also verify whether `post-merge` / `post-checkout` actually run `bd dolt pull`; if not, add the same kind of guarded wrapper (`bd dolt pull` that never fails the git operation; for `post-checkout`, only when `$3 = 1`). Until then, run `bd dolt pull` after `git pull`.
 
