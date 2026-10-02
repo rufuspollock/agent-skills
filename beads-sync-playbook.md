@@ -4,9 +4,9 @@ Use this for personal repositories where Beads should sync across your own machi
 
 ## Model
 
-Each clone has a local embedded Dolt database. The repository tracks Beads metadata/configuration and Dolt’s versioned database data; machine-local database/runtime files stay ignored. Cross-machine synchronization happens through the Beads Dolt remote, not by importing the JSONL export.
+Each clone has a local embedded Dolt database. The repository tracks Beads metadata/configuration, the JSONL export (`.beads/issues.jsonl`) and Dolt’s versioned database data; machine-local database/runtime files stay ignored. Cross-machine synchronization happens through the Beads Dolt remote, not by importing the JSONL export.
 
-The JSONL export is enabled because it is useful for inspection, migration, and tools such as viewers. It is not the backup or sync mechanism.
+The JSONL export is enabled because it is useful for inspection, migration, and tools such as viewers. It is not the backup or sync mechanism, but **it must be committed**: `.beads/issues.jsonl` is a tracked file. It may be empty (0 bytes) until the first issue exists. `bd init` commits its own files before the first export runs, so the file shows as untracked afterwards; `git add` it and commit.
 
 ## One-time setup in an existing repository
 
@@ -21,6 +21,7 @@ bd init --non-interactive \
 bd config set export.auto true
 bd dolt remote list
 bd context
+git status --short .beads   # .beads/issues.jsonl untracked? git add and commit it
 ```
 
 `bd init` normally detects the GitHub `origin` and configures the Dolt remote. Verify it explicitly. The expected remote format is usually:
@@ -48,14 +49,13 @@ git config core.hooksPath .beads/hooks
 
 **Rule: `git push` must also push Beads.** In any repo with Beads installed, a `git push` should push the Beads Dolt data (`refs/dolt/data`) too. Agents asked to "push" or "publish" do both.
 
-**The managed hooks do not do this.** Verified with bd 1.3.0 (hook shim v1.1.2), 2026-09-23: `bd hooks run pre-push` only handles backup/export (and skips those as a git hook); `refs/dolt/data` on the remote stays unchanged after `git push`. An earlier note here said bd 1.1.2 synced natively; that was wrong, or it no longer holds. Check it in a new repo by comparing `git ls-remote origin refs/dolt/data` before and after a `git push` that has a pending bead change.
+**The managed hooks did not do this when last checked (2026-09-23).** `bd hooks run pre-push` only handled backup/export; `refs/dolt/data` on the remote stayed unchanged after `git push`. Re-check in a new repo, in case a newer `bd` does it natively, by comparing `git ls-remote origin refs/dolt/data` before and after a `git push` that has a pending bead change.
 
 So append this to `.beads/hooks/pre-push`, **after** the `# --- END BEADS INTEGRATION ---` marker so that `bd hooks install` leaves it alone. The hooks directory is tracked, so commit it and every clone gets it:
 
 ```sh
 # --- Dolt sync on git push (local addition, outside the managed block) ---
-# bd's managed pre-push hook does not push the Beads Dolt data (verified with
-# bd 1.3.0), so push it here. Never blocks git push; the env guard prevents
+# bd's managed pre-push hook does not push the Beads Dolt data, so push it here. Never blocks git push; the env guard prevents
 # recursion if bd's git-backed remote triggers this hook itself.
 if command -v bd >/dev/null 2>&1 && [ -z "$BD_DOLT_PUSH_IN_HOOK" ]; then
   export BD_DOLT_PUSH_IN_HOOK=1
@@ -86,8 +86,8 @@ Work with issues normally:
 ```bash
 bd ready
 bd create "Short issue title"
-bd update wilberwiki-abc123 --claim
-bd close wilberwiki-abc123 --reason "Implemented"
+bd update PREFIX-abc123 --claim
+bd close PREFIX-abc123 --reason "Implemented"
 ```
 
 At the end of a session:
@@ -121,9 +121,9 @@ bd dolt pull
 
 Do not run `bd init` over an existing clone unless you have confirmed it is genuinely missing its Beads setup. Reinitialization can require explicit local/remote safety confirmation.
 
-## Verification notes for bd 1.1.2
+## Verification notes
 
-In embedded mode, `bd doctor` reports that it is not yet supported; use `bd context`, `bd status`, and `bd dolt status` instead. `bd config validate` currently validates the separate federation-backend setting and may report a missing `federation.remote` even when the normal GitHub-backed `sync.remote` is configured correctly. Do not add a fake dolthub/cloud/file URL just to silence that warning.
+As last checked, in embedded mode `bd doctor` reported that it is not supported; use `bd context`, `bd status`, and `bd dolt status` instead. `bd config validate` validated the separate federation-backend setting and may report a missing `federation.remote` even when the normal GitHub-backed `sync.remote` is configured correctly. Do not add a fake dolthub/cloud/file URL just to silence that warning.
 
 ## If syncing fails
 
@@ -205,6 +205,7 @@ Requirements:
 - Preserve any existing AGENTS.md by passing `--skip-agents` to `bd init`.
 - Configure the Beads Dolt sync remote to the repository’s GitHub `origin` using its SSH URL.
 - Enable `export.auto true`; explain that JSONL is for interchange/viewers and Dolt remotes are the actual sync mechanism.
+- Commit `.beads/issues.jsonl` (tracked, may be empty at first; `bd init` commits before the export runs, so add it afterwards).
 - Keep machine-local Dolt databases, sockets, locks, sync state, and logs ignored.
 - Ensure Git uses the repo-local `.beads/hooks` via `core.hooksPath`.
 - The managed hooks do not sync Dolt. Append the guarded `bd dolt push` from "Recommended hooks" to `.beads/hooks/pre-push`, after the END marker, so `git push` also pushes Beads and never fails because of it. Verify by comparing `git ls-remote origin refs/dolt/data` before and after a push. Add failure-tolerant `bd dolt pull` wrappers for post-merge/post-checkout if those hooks don't already pull.

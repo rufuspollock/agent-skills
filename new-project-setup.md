@@ -77,6 +77,7 @@ If yes, and `.beads` doesn't already exist: follow [[beads-sync-playbook]] in th
 - `bd init --non-interactive --prefix PROJECT_PREFIX --role maintainer --skip-agents` (prefix = short stable slug from the repo name; `--skip-agents` so it doesn't clobber the `AGENTS.md` from step 3)
 - `bd config set export.auto true`
 - verify the Dolt remote points at this repo's GitHub origin
+- commit `.beads/issues.jsonl` (the JSONL export; it is tracked and may be empty at first — `bd init` commits before it is written)
 - install the recommended sync hooks (`core.hooksPath .beads/hooks`)
 - append the guarded `bd dolt push` to `.beads/hooks/pre-push` (see the playbook's "Recommended hooks"). The managed hook does not push Dolt, and from then on `git push` pushes Beads too
 
